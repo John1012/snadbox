@@ -1,4 +1,4 @@
-package com.johnjohn.demoapp.com.johnjohn.demoapp.youbike;
+package com.johnjohn.demoapp.youbike;
 
 import android.os.AsyncTask;
 import android.util.Log;

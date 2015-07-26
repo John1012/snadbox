@@ -1,28 +1,34 @@
 package com.johnjohn.demoapp;
 
+import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.v7.app.ActionBarActivity;
 import android.util.Log;
-import android.view.Menu;
-import android.view.MenuItem;
-import android.widget.Button;
-import android.widget.TextView;
+import android.widget.ListView;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.johnjohn.demoapp.youbike.Station;
+import com.johnjohn.demoapp.youbike.StationAdapter;
+import com.johnjohn.demoapp.youbike.StationDeserializer;
+import com.johnjohn.demoapp.youbike.YouBike;
+import com.johnjohn.demoapp.youbike.YouBikeDeserializer;
 
-import com.johnjohn.demoapp.com.johnjohn.demoapp.youbike.DownloadJsonAsyncTask;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 
-import butterknife.ButterKnife;
-import butterknife.InjectView;
-
-
-public class MainActivity extends ActionBarActivity {
-
-    @InjectView(R.id.textView)
-    TextView textView;
-    @InjectView(R.id.button)
-    Button button;
-
+public class MainActivity extends Activity {
+    final String TAG= "MainActivity";
+    ListView listView;
+    ProgressDialog mProgress;
+    List<Station> mStations=null;
     private String getVersionAndNumber() {
         try {
             final PackageInfo packageInfo = this.getPackageManager().getPackageInfo(this.getPackageName(), 0);
@@ -34,33 +40,78 @@ public class MainActivity extends ActionBarActivity {
     }
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
+    protected void onResume() {
+        super.onResume();
+        if(mStations == null) {
+            mProgress = new ProgressDialog(this);
+            mProgress.setTitle("Loading");
+            mProgress.setMessage("Wait while loading...");
+            mProgress.show();
+        }
+        else {
+            listView.setAdapter(new StationAdapter(this, mStations));
+        }
+    }
+
+    @Override
+    protected void onCreate(Bundle bundle) {
+        super.onCreate(bundle);
         setContentView(R.layout.activity_main);
-        ButterKnife.inject(this);
+
         Log.i("MainActivity", getVersionAndNumber());
-        new DownloadJsonAsyncTask().execute();
+        listView = (ListView)findViewById(R.id.custom_list);
+        if ((bundle != null) && (bundle.getSerializable("stations") != null)) {
+            Log.i(TAG,"restore data");
+            mStations = bundle.getParcelableArrayList("stations");
+        }
+        else
+            new DownloadJsonTask().execute();
     }
 
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        getMenuInflater().inflate(R.menu.menu_main, menu);
-        return true;
+    public void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        Log.i(TAG,"save data");
+        state.putParcelableArrayList("stations", (ArrayList<Station>) mStations);
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        int id = item.getItemId();
+    private void showData(List<Station> stations)
+    {
+        mStations=stations;
+        listView.setAdapter(new StationAdapter(this, stations));
+        mProgress.dismiss();
+    }
 
-        //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
-            return true;
+    private class DownloadJsonTask extends AsyncTask<String,String,YouBike> {
+        private final String YOUBIKE_URL = "http://data.taipei/opendata/datalist/apiAccess?scope=resourceAquire&rid=ddb80380-f1b3-4f8e-8016-7ed9cba571d5";
+        @Override
+        protected YouBike doInBackground(String... params) {
+            YouBike youbike = null;
+            try {
+
+                URL url = new URL(YOUBIKE_URL);
+                HttpURLConnection conn= (HttpURLConnection) url.openConnection();
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
+
+                // Configure GSON
+                final GsonBuilder gsonBuilder = new GsonBuilder();
+                gsonBuilder.registerTypeAdapter(YouBike.class, new YouBikeDeserializer());
+                gsonBuilder.registerTypeAdapter(Station.class, new StationDeserializer());
+                final Gson gson = gsonBuilder.create();
+                youbike = gson.fromJson(reader, YouBike.class);
+                System.out.println(youbike.toString());
+                reader.close();
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return youbike;
         }
 
-        return super.onOptionsItemSelected(item);
+        @Override
+        protected void onPostExecute(YouBike youBike) {
+            super.onPostExecute(youBike);
+            showData(youBike.stations);
+        }
     }
 }
